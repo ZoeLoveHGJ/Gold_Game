@@ -84,6 +84,10 @@ export class GameManager {
     public pendingTreasureMap: boolean = false;
     public pendingFreezeTime: boolean = false;
     public pendingChainBomb: boolean = false;
+    public lowYieldStreak: number = 0;
+    public highYieldStreak: number = 0;
+    public levelDirectorFactor: number = 1.0;
+    public directorLastReason: string = 'stable';
 
     constructor() {
         this.currentState = GameState.START_MENU;
@@ -109,7 +113,7 @@ export class GameManager {
     public initLevel(targetScore: number, timeLimit: number) {
         this.targetScore = targetScore;
         this.levelRequiredDelta = Math.max(0, targetScore - this.score);
-        this.timeRemaining = Math.min(timeLimit + this.pendingTimeBonus, 99);
+        this.timeRemaining = Math.min(timeLimit, 99);
         this.teamHasKey = false;
         
         // Reset/init Hard Target values
@@ -230,6 +234,7 @@ export class GameManager {
         }
 
         this.pendingTimeBonus = 0;
+        this.shopDiscount = 1.0;
         this.currentState = GameState.PLAYING;
     }
 
@@ -271,6 +276,36 @@ export class GameManager {
 
     public addScore(amount: number) {
         this.score += amount;
+    }
+
+    public reportLevelOutcome(earnedThisLevel: number, missionSucceeded: boolean, pressure: number) {
+        const delta = Math.max(1, this.currentLevelDelta || 1);
+        const ratio = earnedThisLevel / delta;
+        const stressHigh = pressure >= 1.2;
+        const stressLow = pressure <= 0.6;
+        if (ratio < 0.92) {
+            this.lowYieldStreak++;
+            this.highYieldStreak = 0;
+        } else if (ratio > 1.45) {
+            this.highYieldStreak++;
+            this.lowYieldStreak = 0;
+        } else {
+            this.lowYieldStreak = 0;
+            this.highYieldStreak = 0;
+        }
+        if (!missionSucceeded || stressHigh) {
+            this.lowYieldStreak++;
+        } else if (missionSucceeded && stressLow && ratio > 1.1) {
+            this.highYieldStreak++;
+        }
+        const boost = Math.min(0.16, this.lowYieldStreak * 0.04);
+        const nerf = Math.min(0.12, this.highYieldStreak * 0.03);
+        this.levelDirectorFactor = 1 + boost - nerf;
+        if (!missionSucceeded) this.directorLastReason = 'mission_fail';
+        else if (stressHigh) this.directorLastReason = 'high_pressure';
+        else if (ratio < 0.92) this.directorLastReason = 'low_yield';
+        else if (ratio > 1.45 && stressLow) this.directorLastReason = 'overperform';
+        else this.directorLastReason = 'stable';
     }
 
     public resetRun(playerCount: 1 | 2 = this.playerCount) {
@@ -323,6 +358,10 @@ export class GameManager {
         this.pendingTreasureMap = false;
         this.pendingFreezeTime = false;
         this.pendingChainBomb = false;
+        this.lowYieldStreak = 0;
+        this.highYieldStreak = 0;
+        this.levelDirectorFactor = 1.0;
+        this.directorLastReason = 'stable';
         this.reputation = 0;
         this.syncGearBuff = 0;
         this.tributeAmpBuff = 0;

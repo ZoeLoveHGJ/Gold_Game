@@ -9,6 +9,7 @@ import { ParticleSystem, FloatingText } from './core/ParticleSystem';
 import { LevelGenerator } from './core/LevelGenerator';
 import { MissionManager, BonusMission } from './core/MissionManager';
 import { HookState } from './entities/Hook';
+import { BALANCE } from './core/BalanceConfig';
 
 // Instantiate managers and systems
 const gameManager = new GameManager();
@@ -85,6 +86,14 @@ let currentCombo = 0;
 let comboTimer = 0;
 let lastRetrieveMinerName: string | null = null;
 let hadLuckyCharmThisLevel = false;
+let levelStartScore = 0;
+let levelEndBaseMiningGain = 0;
+let levelEndTimeBonus = 0;
+let levelMissionSucceeded = false;
+let debugPanelVisible = false;
+let directorPressureMetric = 0;
+let prevHudScore = -1;
+let prevHudTime = -1;
 
 // Collision Helper
 function checkGlobalCollisions(hx: number, hy: number): Item | null {
@@ -329,7 +338,7 @@ function handleItemCollected(item: Item, byPlayer: Miner) {
 
     // Fever Mode Value Multiplier: +30% earnings (reduced from 1.5x)
     if (gameManager.feverTimer > 0) {
-        val = Math.round(val * 1.3);
+        val = Math.round(val * BALANCE.feverValueMultiplier);
     }
 
     gameManager.addScore(val);
@@ -381,7 +390,10 @@ function handleItemCollected(item: Item, byPlayer: Miner) {
     } else if (currentCombo >= 2) {
         // Combo bonus capped at 2% of level delta (prevents runaway inflation)
         const levelDeltaRef = (gameManager as any).currentLevelDelta ?? 600;
-        const comboBonus = Math.min(Math.round(8 * currentCombo), Math.round(levelDeltaRef * 0.015));
+        const comboBonus = Math.min(
+            Math.round(BALANCE.comboBonusPerStack * currentCombo),
+            Math.round(levelDeltaRef * BALANCE.comboBonusMaxDeltaRatio)
+        );
         floatingTexts.push(new FloatingText(item.x, item.y - 45, `Combo x${currentCombo}! +$${comboBonus}`, "#fbbf24", 24));
         gameManager.addScore(comboBonus);
         byPlayer.gatheredValue += comboBonus;
@@ -582,6 +594,11 @@ window.addEventListener('keydown', (e) => {
     }
 });
 document.getElementById('btn-resume')?.addEventListener('click', togglePause);
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'F9') {
+        debugPanelVisible = !debugPanelVisible;
+    }
+});
 
 function nt() {
     const preview = document.getElementById('next-mission-preview');
@@ -707,6 +724,7 @@ function update(dt: number) {
             // Check active mission contract result
             if (activeMission) {
                 const complete = MissionManager.isBonusMissionComplete(activeMission, gameManager, levelStats, playerRoundStats);
+                levelMissionSucceeded = complete;
                 const spawnFT = (text: string, color: string, size?: number) => {
                     floatingTexts.push(new FloatingText(canvas.width / 2, 240, text, color, size ?? 20));
                 };
@@ -738,15 +756,27 @@ function update(dt: number) {
 
             // Calculate level end time remaining bonus:
             // $15/s remaining if Soft Target is cleared, and $30/s if Hard Target is cleared.
-            const multiplier = gameManager.hasAchievedHardTarget ? 30 : 15;
+            const multiplier = gameManager.hasAchievedHardTarget
+                ? BALANCE.hardTimeBonusPerSecond
+                : BALANCE.softTimeBonusPerSecond;
             const timeBonusEarned = Math.round(gameManager.levelEndRemainingTime * multiplier);
+            levelEndBaseMiningGain = Math.max(0, gameManager.score - levelStartScore);
+            levelEndTimeBonus = timeBonusEarned;
             if (timeBonusEarned > 0) {
                 gameManager.addScore(timeBonusEarned);
             }
+            const emptyHooks = playerRoundStats.P1.emptyHooks + playerRoundStats.P2.emptyHooks;
+            const bombsUsed = levelStats.bombsUsed;
+            directorPressureMetric = emptyHooks * 0.22 + bombsUsed * 0.18;
+            gameManager.reportLevelOutcome(
+                levelEndBaseMiningGain + levelEndTimeBonus,
+                levelMissionSucceeded,
+                directorPressureMetric
+            );
 
             // Level summary details
             const summary = document.getElementById('level-summary')!;
-            const cols = gameManager.playerCount === 2 ? 7 : 6;
+            const cols = gameManager.playerCount === 2 ? 9 : 8;
             summary.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
             
             const p2Cell = gameManager.playerCount === 2 ? `
@@ -788,6 +818,18 @@ function update(dt: number) {
                 <div class="summary-cell">
                     <span>✨ 全队总资产</span>
                     <strong class="val-green">$${gameManager.score}</strong>
+                </div>
+                <div class="summary-cell">
+                    <span>📊 本关矿层收益</span>
+                    <strong>$${levelEndBaseMiningGain}</strong>
+                </div>
+                <div class="summary-cell">
+                    <span>🧠 随机调节系数</span>
+                    <strong>x${gameManager.levelDirectorFactor.toFixed(2)}</strong>
+                </div>
+                <div class="summary-cell">
+                    <span>🧪 Director 原因</span>
+                    <strong>${gameManager.directorLastReason}</strong>
                 </div>
             `;
 
@@ -930,14 +972,29 @@ function draw() {
         ctx.restore();
     }
 
-    // Update HUD labels
-    document.getElementById('score-val')!.innerText = gameManager.score.toString();
+    // Update HUD labels with pulse feedback on key number changes
+    const scoreEl = document.getElementById('score-val')!;
+    scoreEl.innerText = gameManager.score.toString();
+    if (prevHudScore >= 0 && gameManager.score !== prevHudScore) {
+        scoreEl.classList.remove('hud-pulse');
+        void scoreEl.offsetWidth;
+        scoreEl.classList.add('hud-pulse');
+    }
+    prevHudScore = gameManager.score;
     
     // Target display with Required Delta and Hard Target
     const needToSoft = Math.max(0, gameManager.targetScore - gameManager.score);
     document.getElementById('target-val')!.innerHTML = `${gameManager.targetScore} / 卓越: $${gameManager.hardTargetScore} <span style="font-size:0.65em; opacity:0.85; font-weight:normal">(需: $${needToSoft})</span>`;
     
-    document.getElementById('time-val')!.innerText = Math.ceil(gameManager.timeRemaining).toString();
+    const timeEl = document.getElementById('time-val')!;
+    const ceilTime = Math.ceil(gameManager.timeRemaining);
+    timeEl.innerText = ceilTime.toString();
+    if (prevHudTime >= 0 && ceilTime < prevHudTime && ceilTime <= 10) {
+        timeEl.classList.remove('hud-critical');
+        void timeEl.offsetWidth;
+        timeEl.classList.add('hud-critical');
+    }
+    prevHudTime = ceilTime;
     document.getElementById('level-val')!.innerText = gameManager.level.toString();
 
     // Update reputation value on HUD
@@ -1022,6 +1079,21 @@ function draw() {
     } else {
         fillEl.style.background = 'linear-gradient(90deg, #f97316, #eab308)'; // Orange/yellow
     }
+
+    if (debugPanelVisible) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.72)';
+        ctx.fillRect(16, 130, 330, 128);
+        ctx.fillStyle = '#e5e7eb';
+        ctx.font = '13px monospace';
+        ctx.fillText('DEBUG (F9)', 28, 152);
+        ctx.fillText(`delta: ${gameManager.currentLevelDelta}`, 28, 174);
+        ctx.fillText(`director: x${gameManager.levelDirectorFactor.toFixed(2)} (${gameManager.directorLastReason})`, 28, 194);
+        ctx.fillText(`base_gain: ${levelEndBaseMiningGain}`, 28, 214);
+        ctx.fillText(`pressure: ${directorPressureMetric.toFixed(2)}`, 28, 234);
+        ctx.fillText(`streak L/H: ${gameManager.lowYieldStreak}/${gameManager.highYieldStreak}`, 28, 254);
+        ctx.restore();
+    }
 }
 
 // ============================================================
@@ -1059,6 +1131,7 @@ function startGame() {
     bestCombo = 0;
     lastRetrieveMinerName = null;
     hadLuckyCharmThisLevel = gameManager.luckyCharm;
+    levelMissionSucceeded = false;
 
     // ========================================================
     // TARGET DELTA: each level requires earning a fixed amount
@@ -1069,6 +1142,9 @@ function startGame() {
     const levelDelta = computeLevelDelta(level, gameManager.playerCount);
     const actualTarget = gameManager.score + levelDelta;
     (gameManager as any).currentLevelDelta = levelDelta;
+    levelStartScore = gameManager.score;
+    levelEndBaseMiningGain = 0;
+    levelEndTimeBonus = 0;
 
     // Next Level Time setup with penalty/bonus
     let timeLimit = 60;

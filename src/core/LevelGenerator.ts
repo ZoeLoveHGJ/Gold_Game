@@ -4,6 +4,7 @@ import { Pig } from '../entities/Pig';
 import { AncientKey, SealedChest, Gopher } from '../entities/SpecialEntities';
 import { GameManager } from './GameManager';
 import { BonusMission } from './MissionManager';
+import { BALANCE } from './BalanceConfig';
 
 export class LevelGenerator {
     /**
@@ -18,43 +19,69 @@ export class LevelGenerator {
     ): Item[] {
         const items: Item[] = [];
 
-        // Procedural generator positioning bounds
-        const randPos = () => ({
-            x: 80 + Math.random() * 1040,
-            y: 250 + Math.random() * 560 // Safe zone inside the mining field
-        });
+        // Procedural generator positioning bounds with minimal overlap control.
+        const usedPositions: Array<{ x: number; y: number }> = [];
+        const randPos = (riskBand: 'top' | 'mid' | 'deep' = 'mid') => {
+            for (let attempt = 0; attempt < BALANCE.spawnAttempts; attempt++) {
+                let yBase = 250;
+                let yRange = 560;
+                if (riskBand === 'top') { yBase = 250; yRange = 180; }
+                if (riskBand === 'mid') { yBase = 370; yRange = 220; }
+                if (riskBand === 'deep') { yBase = 560; yRange = 250; }
+                const candidate = {
+                    x: 80 + Math.random() * 1040,
+                    y: yBase + Math.random() * yRange
+                };
+                const ok = usedPositions.every(p => {
+                    const dx = p.x - candidate.x;
+                    const dy = p.y - candidate.y;
+                    return (dx * dx + dy * dy) >= BALANCE.spawnMinDistance * BALANCE.spawnMinDistance;
+                });
+                if (ok) {
+                    usedPositions.push(candidate);
+                    return candidate;
+                }
+            }
+            const fallback = {
+                x: 80 + Math.random() * 1040,
+                y: 250 + Math.random() * 560
+            };
+            usedPositions.push(fallback);
+            return fallback;
+        };
 
         // Spawn Helpers
         const addGold = (size: 'large' | 'medium' | 'small'): number => {
-            const p = randPos();
+            const band = size === 'large' ? 'deep' : size === 'small' ? 'top' : 'mid';
+            const p = randPos(band);
             const gold = new Gold(p.x, p.y, size);
             items.push(gold);
             return gold.value;
         };
 
         const addRock = (size: 'large' | 'small'): number => {
-            const p = randPos();
+            const p = randPos(size === 'large' ? 'deep' : 'mid');
             const rock = new Rock(p.x, p.y, size);
             items.push(rock);
             return rock.value;
         };
 
         const addDiamond = (): number => {
-            const p = randPos();
+            const p = randPos('deep');
             const dia = new Diamond(p.x, p.y);
             items.push(dia);
             return dia.value;
         };
 
         const addPig = (hasDiamond: boolean = false, hasTNT: boolean = false, hasMystery: boolean = false): number => {
-            const p = randPos();
+            const p = randPos(hasDiamond ? 'deep' : 'mid');
             const pig = new Pig(p.x, p.y, hasDiamond, hasTNT, hasMystery);
             items.push(pig);
             return pig.value;
         };
 
         const addTNT = (): number => {
-            const p = randPos();
+            const p = randPos('deep');
             const tnt = new TNTBarrel(p.x, p.y);
             items.push(tnt);
             return 0;
@@ -63,7 +90,7 @@ export class LevelGenerator {
         let placedValue = 0;
 
         // Spawn budget calculation: target field value ≈ 1.7x levelDelta
-        const spawnBudget = Math.round(levelDelta * 1.7);
+        const spawnBudget = Math.round(levelDelta * BALANCE.levelFieldValueTargetRatio * gameManager.levelDirectorFactor);
 
         switch (levelType) {
             case 'gold_rush': {
@@ -356,7 +383,7 @@ export class LevelGenerator {
         }
 
         // Economy Pity: ensure min 1.2x delta in the field.
-        const minFieldValue = levelDelta * 1.2;
+        const minFieldValue = levelDelta * BALANCE.levelFieldValueMinRatio * gameManager.levelDirectorFactor;
         let safeGuard = 0;
         while (placedValue < minFieldValue && safeGuard < 12) {
             placedValue += Math.random() > 0.6 ? addGold('medium') : addGold('small');

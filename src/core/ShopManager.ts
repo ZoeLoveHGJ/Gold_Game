@@ -1,6 +1,7 @@
 import { Miner } from '../entities/Miner';
 import { GameManager } from './GameManager';
 import { audioManager } from './AudioManager';
+import { BALANCE } from './BalanceConfig';
 
 export interface ShopItem {
     id: string;
@@ -56,7 +57,7 @@ export class ShopManager {
             desc: '⏳ 仅下一关：直接为下一关注入 15 秒超长黄金挖掘时间！',
             basePrice: 190,
             icon: '⏳',
-            apply: (_p1, _p2) => { this.gameManager.pendingTimeBonus += 15; }
+            apply: (_p1, _p2) => { this.gameManager.timeLimitBonus += 15; }
         },
         {
             id: 'lucky_mystery',
@@ -186,6 +187,31 @@ export class ShopManager {
         this.player2 = p2;
     }
 
+    private getItemTag(itemId: string): string {
+        if (itemId === 'extra_time' || itemId === 'freeze_time' || itemId === 'crystal_shield') return '保命';
+        if (itemId === 'bomb_crate' || itemId === 'chain_bomb' || itemId === 'fossil_demolisher') return '爆破';
+        if (itemId === 'diamond_polish' || itemId === 'treasure_map' || itemId === 'gold_radar') return '收益';
+        if (itemId === 'sync_gear' || itemId === 'tribute_amp') return '协作';
+        return '增益';
+    }
+
+    private getRecommendation(itemId: string): string | null {
+        const needToSoft = Math.max(0, this.gameManager.targetScore - this.gameManager.score);
+        const timeLow = this.gameManager.levelRequiredDelta > 0 && this.gameManager.timeRemaining <= 18;
+        if ((needToSoft > Math.max(350, this.gameManager.levelRequiredDelta * 0.48)) &&
+            ['diamond_polish', 'treasure_map', 'gold_radar', 'alchemy'].includes(itemId)) {
+            return '推荐:补收益';
+        }
+        if ((this.gameManager.bombCount <= 1 || this.gameManager.reputation < 0) &&
+            ['bomb_crate', 'chain_bomb', 'fossil_demolisher', 'insurance'].includes(itemId)) {
+            return '推荐:稳局';
+        }
+        if (timeLow && ['extra_time', 'freeze_time', 'crystal_shield'].includes(itemId)) {
+            return '推荐:保命';
+        }
+        return null;
+    }
+
     public renderShop(container: HTMLElement) {
         let balanceEl = document.getElementById('shop-balance-header');
         if (!balanceEl) {
@@ -212,7 +238,7 @@ export class ShopManager {
         // becoming absurd just because late-game scores are large.
         const levelMult = Math.min(2.15, 1 + Math.log2(this.gameManager.level + 1) * 0.22);
         const richDiscount = this.gameManager.score > this.gameManager.targetScore * 1.25 ? 0.9 : 1;
-        const missionDiscount = this.gameManager.shopDiscountCharges > 0 ? (this.gameManager.shopDiscountRate || 0.75) : 1;
+        const missionDiscount = this.gameManager.shopDiscountCharges > 0 ? (this.gameManager.shopDiscountRate || 0.75) : this.gameManager.shopDiscount;
         const missionInflation = this.gameManager.pendingShopInflation > 0 ? 1.28 : 1;
         if (this.gameManager.shopDiscountCharges > 0) {
             this.gameManager.shopDiscountCharges--;
@@ -237,22 +263,33 @@ export class ShopManager {
             const variance = 0.82 + Math.random() * 0.36;
             // Cap level multiplier to prevent hyperinflation in late game
             const cappedLevelMult = Math.min(2.5, levelMult);
-            const currentPrice = Math.max(20, Math.floor(item.basePrice * cappedLevelMult * richDiscount * missionDiscount * missionInflation * reputationPriceMult * variance));
+            const highTierBoost = ['treasure_map', 'freeze_time', 'crystal_shield'].includes(item.id) ? BALANCE.shopHighTierPriceMultiplier : 1;
+            const currentPrice = Math.max(20, Math.floor(item.basePrice * highTierBoost * cappedLevelMult * richDiscount * missionDiscount * missionInflation * reputationPriceMult * variance));
             return { ...item, currentPrice };
         });
 
         itemsToShow.forEach(item => {
             const affordable = this.gameManager.score >= item.currentPrice;
+            const recommendation = this.getRecommendation(item.id);
             const el = document.createElement('div');
             el.className = 'shop-item';
             if (!affordable) el.classList.add('expensive-item');
+            if (recommendation) el.classList.add('recommended-item');
             
             el.innerHTML = `
-                <div class="shop-item-icon">${item.icon}</div>
+                <div class="shop-item-top">
+                    <div class="shop-item-icon">${item.icon}</div>
+                    <div class="shop-item-tag">${this.getItemTag(item.id)}</div>
+                </div>
+                ${recommendation ? `<div class="shop-item-reco">${recommendation}</div>` : ''}
                 <div class="shop-item-name">${item.name}</div>
-                <div class="shop-item-desc">${item.desc}</div>
+                <div class="shop-item-core">${item.desc.replace(/^[^\s]+\s*/, '').split('：')[0]}</div>
+                <details class="shop-item-details">
+                    <summary>查看详情</summary>
+                    <div class="shop-item-desc">${item.desc}</div>
+                </details>
                 <div class="shop-item-action ${affordable ? 'affordable' : 'expensive'}">
-                    $${item.currentPrice}
+                    $${item.currentPrice} ${affordable ? '<span>可购买</span>' : '<span>余额不足</span>'}
                 </div>
             `;
 
@@ -275,7 +312,9 @@ export class ShopManager {
             item.apply(this.player1, this.player2);
             el.classList.add('purchased');
             el.innerHTML = `
-                <div class="shop-item-icon" style="opacity: 0.5;">${item.icon}</div>
+                <div class="shop-item-top">
+                    <div class="shop-item-icon" style="opacity: 0.5;">${item.icon}</div>
+                </div>
                 <div class="shop-item-name" style="opacity: 0.5; text-decoration: line-through;">${item.name}</div>
                 <div class="shop-item-purchased-badge">✅ 已购买</div>
             `;

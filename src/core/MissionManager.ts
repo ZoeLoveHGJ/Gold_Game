@@ -248,7 +248,8 @@ export class MissionManager {
             }
             case 'discount': {
                 const discount = m.rewardValue ?? 0.7;
-                gameManager.shopDiscount = discount;
+                gameManager.shopDiscountRate = discount;
+                gameManager.shopDiscountCharges = Math.max(gameManager.shopDiscountCharges, 1);
                 let extraCash = 200 * level;
                 if (m.id === 'coop_alternation') {
                     extraCash = 400;

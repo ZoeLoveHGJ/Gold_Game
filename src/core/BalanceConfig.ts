@@ -1,0 +1,15 @@
+export const BALANCE = {
+  comboBonusPerStack: 8,
+  comboBonusMaxDeltaRatio: 0.01,
+  feverValueMultiplier: 1.2,
+  feverShootSpeedMultiplier: 1.25,
+  feverRetractSpeedMultiplier: 1.25,
+  maxRetractSpeedMultiplier: 2.2,
+  softTimeBonusPerSecond: 15,
+  hardTimeBonusPerSecond: 22,
+  shopHighTierPriceMultiplier: 1.15,
+  levelFieldValueTargetRatio: 1.65,
+  levelFieldValueMinRatio: 1.25,
+  spawnMinDistance: 42,
+  spawnAttempts: 28,
+};

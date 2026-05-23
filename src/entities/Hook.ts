@@ -1,4 +1,5 @@
 import { audioManager } from '../core/AudioManager';
+import { BALANCE } from '../core/BalanceConfig';
 import { Miner } from './Miner';
 import { Item } from './Item';
 import { Pig } from './Pig';
@@ -84,7 +85,7 @@ export class Hook {
             shootSpeed *= 1.2;
         }
         if (this.owner?.gameManager?.feverTimer > 0) {
-            shootSpeed *= 1.4;
+            shootSpeed *= BALANCE.feverShootSpeedMultiplier;
         }
         this.length += shootSpeed * dt;
         this.updatePosition();
@@ -134,6 +135,7 @@ export class Hook {
 
     private retract(dt: number) {
         let retractSpeed = this.speed;
+        let retractMultiplier = 1;
         if (this.grabbedItem) {
             // Sealed Chest logic: slips off if locked and pulled 50px
             if (this.grabbedItem.type === 'sealed_chest' && !this.owner?.gameManager?.teamHasKey) {
@@ -190,26 +192,26 @@ export class Hook {
             }
             retractSpeed = Math.max(10, this.speed - weight * 2);
             if (this.owner?.gameManager?.activeLayerEvent === 'quicksand' && weight >= 80) {
-                retractSpeed *= 0.72;
+                retractMultiplier *= 0.72;
             }
             if (this.owner?.gameManager?.activeLayerEvent === 'magma') {
-                retractSpeed *= 1.2;
+                retractMultiplier *= 1.2;
             }
             
             if (this.drillBoosted) {
-                retractSpeed *= 3.0;
+                retractMultiplier *= 3.0;
             }
         }
 
         // Apply strength buff (now stored on gameManager via owner)
         if (this.owner && this.owner.gameManager && this.owner.gameManager.strengthBuff > 0 && this.grabbedItem) {
-            retractSpeed *= 1.5;
+            retractMultiplier *= 1.5;
         }
 
         // Apply geology sledgehammer buff for rocks/heavy items
         if (this.owner && this.owner.gameManager && this.owner.gameManager.geologySledgehammer > 0 && this.grabbedItem) {
             if (this.grabbedItem.type === 'rock' || (this.grabbedItem.weight && this.grabbedItem.weight >= 80)) {
-                retractSpeed *= 1.5;
+                retractMultiplier *= 1.5;
             }
         }
 
@@ -217,7 +219,7 @@ export class Hook {
         if (this.owner?.gameManager && this.grabbedItem && this.grabbedItem.type === 'rock') {
             const gm = this.owner.gameManager;
             if (gm.rockBuff > 0 && gm.alchemyBuff > 0 && gm.geologySledgehammer > 0) {
-                retractSpeed *= 1.5;
+                retractMultiplier *= 1.5;
             }
         }
 
@@ -228,7 +230,7 @@ export class Hook {
             const p2 = win.player2;
             const other = this.owner.name === 'P1' ? p2 : p1;
             if (other?.hook?.state === HookState.RETRACTING) {
-                retractSpeed *= 1.30;
+                retractMultiplier *= 1.30;
                 if (win.spawnSparkles && Math.random() < 0.15) {
                     win.spawnSparkles(this.x, this.y, "#38bdf8", 4);
                     win.spawnSparkles(this.x, this.y, "#a78bfa", 2);
@@ -238,8 +240,11 @@ export class Hook {
 
         // Apply Fever Mode speed boost
         if (this.owner?.gameManager?.feverTimer > 0) {
-            retractSpeed *= 1.4;
+            retractMultiplier *= BALANCE.feverRetractSpeedMultiplier;
         }
+
+        retractMultiplier = Math.min(BALANCE.maxRetractSpeedMultiplier, retractMultiplier);
+        retractSpeed *= retractMultiplier;
 
         this.length -= retractSpeed * dt;
         this.updatePosition();
