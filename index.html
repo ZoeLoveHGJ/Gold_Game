@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>黄金矿工双人合作</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+
+    <div id="game-wrapper">
+
+      <!-- ① HUD: ABOVE canvas, not overlapping it -->
+      <div id="hud" class="hidden">
+        <div class="hud-bar">
+          <div class="hud-section hud-left">
+            <div class="hud-item">
+              <span class="hud-label">💰 金钱</span>
+              <span class="hud-value val-green">$<span id="score-val">0</span></span>
+            </div>
+            <div class="hud-item">
+              <span class="hud-label">🎯 目标</span>
+              <span class="hud-value val-yellow">$<span id="target-val">500</span></span>
+              <span class="target-progress">
+                <span id="target-progress-fill"></span>
+                <span id="target-progress-tick" class="target-progress-tick"></span>
+              </span>
+            </div>
+            <div class="hud-item" id="reputation-hud">
+              <span class="hud-label">⭐ 声望</span>
+              <span class="hud-value val-yellow" id="reputation-val">0</span>
+            </div>
+          </div>
+
+          <div class="hud-section hud-center">
+            <div class="hud-player">
+              <span class="player-badge p1-badge">P1</span>
+              <span class="player-score" id="p1-score">$0</span>
+            </div>
+            <div class="hud-center-info">
+              <div class="hud-level-type" id="level-type-label">普通关卡</div>
+              <div class="hud-bombs" id="hud-bombs"></div>
+            </div>
+            <div class="hud-player">
+              <span class="player-badge p2-badge">P2</span>
+              <span class="player-score" id="p2-score">$0</span>
+            </div>
+          </div>
+
+          <div class="hud-section hud-right">
+            <div class="hud-item">
+              <span class="hud-label">⏱ 时间</span>
+              <span class="hud-value val-red" id="time-val">60</span>
+            </div>
+            <div class="hud-item">
+              <span class="hud-label">📍 第关</span>
+              <span class="hud-value val-yellow" id="level-val">1</span>
+            </div>
+            <!-- Pause button -->
+            <button id="btn-pause" class="hud-btn" title="暂停 (ESC)">⏸</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ② Canvas area -->
+      <div id="canvas-wrapper">
+        <aside id="p1-detail" class="player-detail p1-detail">
+          <div class="detail-title"><span class="player-badge p1-badge">P1</span> 玩家1 (累计)</div>
+          <div class="detail-row"><span>累计总得分</span><strong id="p1-detail-score">$0</strong></div>
+          <div class="detail-row"><span>贡献占比</span><strong id="p1-detail-share">0%</strong></div>
+          <div class="detail-row"><span>累计金块 / 钻石</span><strong id="p1-detail-gems">0 / 0</strong></div>
+          <div class="detail-row"><span>累计神秘 / 钻石猪</span><strong id="p1-detail-special">0 / 0</strong></div>
+          <div class="detail-row"><span>累计炸弹 / 触雷</span><strong id="p1-detail-risk">0 / 0</strong></div>
+          <div class="detail-row"><span>累计空钩数</span><strong id="p1-detail-empty">0</strong></div>
+        </aside>
+
+        <main id="game-stage">
+          <div id="mission-card" class="mission-card hidden">
+            <div>
+              <span class="mission-label">本关任务</span>
+              <strong id="mission-title">-</strong>
+            </div>
+            <span id="mission-status" class="mission-status">进行中</span>
+          </div>
+
+          <!-- Active Buffs Indicator Row -->
+          <div id="active-buffs-bar" class="active-buffs-bar hidden">
+            <span class="buffs-label">⚡ 长效 Buff:</span>
+            <div id="buffs-list" class="buffs-list"></div>
+          </div>
+
+          <div id="game-container">
+            <canvas id="game-canvas" width="1200" height="900"></canvas>
+
+            <!-- UI overlays (on top of canvas only) -->
+            <div id="ui-layer" class="overlay">
+
+              <!-- Start Menu -->
+              <div id="start-menu" class="panel">
+                <div class="panel-inner">
+                  <h1>⛏ 黄金矿工</h1>
+                  <p class="subtitle">选择模式后开始挖矿</p>
+                  <div class="mode-grid">
+                    <button id="btn-single" class="mode-btn">
+                      <span>单人模式</span>
+                      <small>S 发射，W 炸弹</small>
+                    </button>
+                    <button id="btn-coop" class="mode-btn selected">
+                      <span>双人合作</span>
+                      <small>P1: S/W · P2: ↓/↑</small>
+                    </button>
+                  </div>
+                  <div class="controls-grid">
+                    <div class="ctrl-card">
+                      <div class="ctrl-title">P1 操作</div>
+                      <div class="ctrl-row"><kbd>S</kbd> 发射钩子</div>
+                      <div class="ctrl-row"><kbd>W</kbd> 使用炸弹</div>
+                    </div>
+                    <div class="ctrl-card">
+                      <div class="ctrl-title">P2 操作</div>
+                      <div class="ctrl-row"><kbd>↓</kbd> 发射钩子</div>
+                      <div class="ctrl-row"><kbd>↑</kbd> 使用炸弹</div>
+                    </div>
+                  </div>
+                  <p class="hint-text">按 <kbd>ESC</kbd> 暂停游戏</p>
+                  <button id="btn-start">开始游戏 🎮</button>
+                </div>
+              </div>
+
+              <!-- Shop Menu -->
+              <div id="shop-menu" class="panel hidden">
+                <div class="panel-inner shop-panel-inner">
+                  <h2>🏪 黑市商店</h2>
+                  <p class="subtitle">每件商品只此一次，价格随机浮动！</p>
+                  <div id="level-summary" class="level-summary"></div>
+                  <div id="next-mission-preview" class="next-mission-preview"></div>
+                  <div class="shop-items"></div>
+                  <button id="btn-next-level" class="next-level-btn">进入下一关 ➔</button>
+                </div>
+              </div>
+
+              <!-- Game Over -->
+              <div id="game-over-menu" class="panel hidden">
+                <div class="panel-inner">
+                  <h2>💀 任务失败</h2>
+                  <p class="subtitle">金钱不足，无法完成目标！</p>
+                  <div id="gameover-summary" class="level-summary"></div>
+                  <p class="final-score">最终金额：$<span id="final-score">0</span></p>
+                  <button id="btn-restart">再来一局 🔄</button>
+                </div>
+              </div>
+
+              <!-- Pause Overlay -->
+              <div id="pause-menu" class="panel hidden">
+                <div class="panel-inner">
+                  <h2>⏸ 游戏暂停</h2>
+                  <p class="subtitle">休息一下，随时继续！</p>
+                  <button id="btn-resume">继续游戏 ▶</button>
+                  <button id="btn-quit-pause" class="secondary-btn">放弃本局</button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </main>
+
+        <aside id="p2-detail" class="player-detail p2-detail">
+          <div class="detail-title"><span class="player-badge p2-badge">P2</span> 玩家2 (累计)</div>
+          <div class="detail-row"><span>累计总得分</span><strong id="p2-detail-score">$0</strong></div>
+          <div class="detail-row"><span>贡献占比</span><strong id="p2-detail-share">0%</strong></div>
+          <div class="detail-row"><span>累计金块 / 钻石</span><strong id="p2-detail-gems">0 / 0</strong></div>
+          <div class="detail-row"><span>累计神秘 / 钻石猪</span><strong id="p2-detail-special">0 / 0</strong></div>
+          <div class="detail-row"><span>累计炸弹 / 触雷</span><strong id="p2-detail-risk">0 / 0</strong></div>
+          <div class="detail-row"><span>累计空钩数</span><strong id="p2-detail-empty">0</strong></div>
+        </aside>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
